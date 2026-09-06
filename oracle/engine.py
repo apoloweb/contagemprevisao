@@ -6,10 +6,11 @@ Loop em background com o ciclo do jogo em FASES (ver PhasedRound):
   pause   -> rodada liquidada, mostrando o resultado
 Ao virar a rodada, o alvo X da proxima = contagem final desta.
 
-Fluidez: o YOLO roda so a cada 'detect_every' frames; os quadros intermediarios
-reaproveitam as ultimas deteccoes. O video anotado e transmitido como HLS
-(H.264) via ffmpeg -> reproducao fluida no navegador (hls.js). Um JPEG do ultimo
-frame tambem fica disponivel (MJPEG/snapshot).
+Video: o YOLO roda so a cada 'detect_every' frames. O ultimo frame anotado fica
+guardado, e uma thread dedicada (_hls_pump) o entrega ao ffmpeg a uma taxa
+CONSTANTE (hls_fps) -> HLS/H.264 em framerate fixo = reproducao fluida, sem
+depender do ritmo variavel do detector. Um JPEG do ultimo frame tambem fica
+disponivel (fallback/snapshot).
 
 Auditoria: a cada +1 na contagem, salva um print do momento em runs/crossings/.
 
@@ -55,20 +56,40 @@ def line_from_frac(frac, w, h):
     return ((x1 * w, y1 * h), (x2 * w, y2 * h))
 
 
-def _start_hls(w, h, out_w, hls_dir: Path):
-    """ffmpeg lendo frames BGR crus do stdin e publicando HLS (H.264)."""
+def _start_hls(w, h, out_w, hls_dir: Path, fps: float):
+    """ffmpeg lendo frames BGR crus (CFR) do stdin e publicando HLS (H.264)."""
+    r = f"{fps:g}"
     cmd = [
         "ffmpeg", "-y", "-loglevel", "error",
-        "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{w}x{h}",
-        "-use_wallclock_as_timestamps", "1", "-i", "pipe:0", "-an",
-        "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
-        "-pix_fmt", "yuv420p", "-vf", f"scale={out_w}:-2", "-g", "40", "-sc_threshold", "0",
-        "-f", "hls", "-hls_time", "1", "-hls_list_size", "5",
+        "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{w}x{h}", "-r", r, "-i", "pipe:0", "-an",
+        "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency", "-pix_fmt", "yuv420p",
+        "-vf", f"scale={out_w}:-2", "-r", r, "-g", str(int(fps * 2)), "-sc_threshold", "0",
+        "-b:v", "1200k", "-maxrate", "1500k", "-bufsize", "2500k",
+        "-f", "hls", "-hls_time", "2", "-hls_list_size", "6",
         "-hls_flags", "delete_segments+omit_endlist+independent_segments",
         str(hls_dir / "stream.m3u8"),
     ]
     return subprocess.Popen(cmd, stdin=subprocess.PIPE,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def _hls_pump(ff, fps, stop_evt, get_frame):
+    """Alimenta o ffmpeg a uma taxa CONSTANTE, sempre com o ultimo frame."""
+    interval = 1.0 / fps
+    nxt = time.time()
+    while not stop_evt.is_set():
+        fr = get_frame()
+        if fr is not None:
+            try:
+                ff.stdin.write(fr.tobytes())
+            except Exception:
+                break
+        nxt += interval
+        d = nxt - time.time()
+        if d > 0:
+            time.sleep(d)
+        else:
+            nxt = time.time()  # nao acumula atraso
 
 
 class OracleEngine(threading.Thread):
@@ -80,6 +101,7 @@ class OracleEngine(threading.Thread):
         self.on_new_round = on_new_round
         self._lock = threading.Lock()
         self._jpeg = None
+        self._latest_frame = None
         self._state = {"ready": False}
         self._stop = threading.Event()
 
@@ -96,6 +118,10 @@ class OracleEngine(threading.Thread):
     def get_jpeg(self):
         with self._lock:
             return self._jpeg
+
+    def _get_latest_frame(self):
+        with self._lock:
+            return self._latest_frame
 
     def get_state(self) -> dict:
         with self._lock:
@@ -171,9 +197,12 @@ class OracleEngine(threading.Thread):
                 except Exception:
                     pass
             try:
-                ff = _start_hls(w, h, stream_w, hls_dir)
+                ff = _start_hls(w, h, stream_w, hls_dir, hls_fps)
+                threading.Thread(target=_hls_pump, args=(ff, hls_fps, self._stop, self._get_latest_frame),
+                                 daemon=True).start()
             except Exception as e:
                 print("[engine] HLS off (ffmpeg falhou):", e)
+                ff = None
 
         counter = LineCounter(line_from_frac(self._line_frac, w, h))
         rounds = PhasedRound(betting_s, round_s, pause_s)
@@ -184,7 +213,6 @@ class OracleEngine(threading.Thread):
         fi = 0
         last_tracks = []
         prev_count = 0
-        last_hls = 0.0
 
         while not self._stop.is_set():
             ok, frame = cap.read()
@@ -251,15 +279,6 @@ class OracleEngine(threading.Thread):
                 cv2.imwrite(str(cross_dir / f"r{rounds.round_id:03d}_n{counter.count:03d}.jpg"), snap)
                 prev_count = counter.count
 
-            # HLS: escreve o frame anotado no ffmpeg (limitado a ~hls_fps)
-            if ff is not None and (time.time() - last_hls) >= 1.0 / hls_fps:
-                try:
-                    ff.stdin.write(frame.tobytes())
-                    last_hls = time.time()
-                except Exception:
-                    ff = None
-
-            # JPEG do ultimo frame (fallback/snapshot)
             out = frame
             if stream_w and w > stream_w:
                 out = cv2.resize(frame, (stream_w, int(h * stream_w / w)))
@@ -272,6 +291,7 @@ class OracleEngine(threading.Thread):
                 fps_ema = 0.9 * fps_ema + 0.1 * (1.0 / dt) if fps_ema else 1.0 / dt
 
             with self._lock:
+                self._latest_frame = frame  # a thread _hls_pump consome a taxa fixa
                 if ok2:
                     self._jpeg = buf.tobytes()
                 self._state = {
