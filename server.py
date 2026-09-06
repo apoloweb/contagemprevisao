@@ -16,6 +16,7 @@ import argparse
 import json
 import math
 import random
+import re
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -27,6 +28,12 @@ from oracle.engine import OracleEngine, VEHICLES
 WEB_DIR = Path(__file__).parent / "web"
 
 # ------------------------------------------------------------------ helpers
+
+def yt_id(url: str) -> str:
+    """Extrai o ID do video do YouTube de uma URL (watch, live, embed, youtu.be)."""
+    m = re.search(r"(?:v=|youtu\.be/|/live/|/embed/)([\w-]{11})", url or "")
+    return m.group(1) if m else ""
+
 
 def label_for(classes) -> str:
     if list(classes) == ["person"]:
@@ -135,7 +142,8 @@ class App:
     def state_json(self) -> dict:
         st = self.engine.get_state()
         snap = self.exchange.snapshot("you")
-        return {"engine": st, "you": snap["you"], "market": snap["market"], "history": snap["history"]}
+        return {"engine": st, "you": snap["you"], "market": snap["market"],
+                "history": snap["history"], "youtube_id": yt_id(str(self.cfg.get("source", "")))}
 
     def place_order(self, side: str, qty: int, price=None) -> dict:
         m = self.exchange.market
