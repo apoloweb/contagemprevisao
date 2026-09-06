@@ -4,15 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Previsão — Mercado ao vivo (demo)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap">
 <style>
   :root{
-    --bg:#0e0f13; --panel:#181a20; --panel2:#20232c; --line:#2a2e3a;
-    --txt:#e8eaf0; --mut:#9aa3b2; --green:#22c55e; --red:#ef4444;
-    --cyan:#22d3ee; --accent:#7c3aed;
+    --bg:#0a0b0f; --panel:#13151c; --panel2:#1b1e28; --line:#272b36;
+    --txt:#eef1f7; --mut:#8b93a7; --green:#16c784; --red:#f6465d;
+    --cyan:#2dd4bf; --accent:#16c784;
+    --mono:"IBM Plex Mono",ui-monospace,monospace;
   }
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--txt);
-       font:14px/1.45 system-ui,Segoe UI,Roboto,Arial,sans-serif}
+  body{margin:0;color:var(--txt);
+       background:radial-gradient(1100px 520px at 78% -12%, #171b24 0%, var(--bg) 58%) fixed;
+       font:14.5px/1.5 "Plus Jakarta Sans",system-ui,Segoe UI,Roboto,Arial,sans-serif;
+       -webkit-font-smoothing:antialiased}
   a{color:var(--cyan)}
   header{display:flex;align-items:center;justify-content:space-between;
          padding:12px 18px;border-bottom:1px solid var(--line);background:#0b0c10}
@@ -47,18 +53,23 @@
   .stat.timer.warn .n{color:var(--red)}
   .stat .l{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
   .sides{display:flex;gap:10px}
-  .side{flex:1;border-radius:12px;padding:12px;border:1px solid var(--line);text-align:center;background:var(--panel2)}
-  .side .lab{font-weight:700}
-  .side .odds{font-size:24px;font-weight:800;margin:2px 0}
-  .side .pct{font-size:12px;color:var(--mut)}
-  .side.over{border-color:rgba(34,197,94,.4)}
+  .side{flex:1;border-radius:14px;padding:14px 12px;border:1px solid var(--line);text-align:center;
+        background:var(--panel2);transition:transform .12s,border-color .12s}
+  .side:hover{transform:translateY(-1px)}
+  .side .lab{font-weight:700;font-size:13px}
+  .side .odds{font-family:var(--mono);font-size:26px;font-weight:600;margin:4px 0;letter-spacing:-.02em}
+  .side .pct{font-size:11px;color:var(--mut)}
+  .side.over{border-color:rgba(22,199,132,.45);background:linear-gradient(180deg,rgba(22,199,132,.09),transparent)}
   .side.over .odds{color:var(--green)}
-  .side.under{border-color:rgba(239,68,68,.4)}
+  .side.under{border-color:rgba(246,70,93,.45);background:linear-gradient(180deg,rgba(246,70,93,.09),transparent)}
   .side.under .odds{color:var(--red)}
-  .buyrow{display:flex;gap:10px;margin-top:10px}
-  .buyrow button{flex:1;font-weight:700;border:none;color:#08130b}
-  .buy-over{background:var(--green)}
-  .buy-under{background:var(--red);color:#1a0808}
+  .buyrow{display:flex;gap:10px;margin-top:12px}
+  .buyrow button{flex:1;font-weight:800;border:none;color:#04140c;padding:12px;border-radius:11px;
+        font-size:14px;transition:filter .12s,transform .06s}
+  .buyrow button:hover:not(:disabled){filter:brightness(1.08)}
+  .buyrow button:active:not(:disabled){transform:translateY(1px)}
+  .buy-over{background:linear-gradient(180deg,#1ed992,#12b477)}
+  .buy-under{background:linear-gradient(180deg,#ff5a70,#e23a52);color:#1a0206}
   .qtyrow{display:flex;align-items:center;gap:8px;margin-top:10px}
   .qtyrow input{width:80px;background:var(--panel2);border:1px solid var(--line);
                 color:var(--txt);border-radius:8px;padding:8px;font:inherit;text-align:center}
