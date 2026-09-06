@@ -1,0 +1,16 @@
+# Config para rodar na VPS (CPU, sem GPU). Ajustado pra aguentar 1 vCPU.
+source: "https://www.youtube.com/watch?v=sTF-6_xinUU"
+model: yolo11n.pt
+device: cpu
+classes: [car, motorcycle, bus, truck]
+imgsz: 320
+detect_every: 5
+conf: 0.35
+betting_seconds: 120
+round_seconds: 300
+pause_seconds: 20
+threshold: 5
+stream_width: 640
+hls_fps: 8
+jpeg_quality: 65
+max_height: 480

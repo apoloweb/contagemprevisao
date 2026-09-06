@@ -110,8 +110,7 @@
   <!-- ESQUERDA: video ao vivo com overlay do oraculo -->
   <div class="left">
     <div class="vidbox">
-      <iframe id="cam" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
-      <div id="camwait" class="calhint" style="display:block">Conectando à transmissão…</div>
+      <video id="cam" autoplay muted playsinline></video>
     </div>
     <div class="toolbar">
       <span class="sub" style="align-self:center">Contar:</span>
@@ -175,6 +174,7 @@
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const rs = c => 'R$ ' + (c/100).toFixed(2).replace('.',',');
@@ -188,12 +188,16 @@ async function post(url, body){
 
 // ---- video: embed direto do YouTube (CDN do Google, nao passa pelo seu PC) ----
 const cam=$('cam');
-let embedded=false;
-function setEmbed(id){
-  if(embedded || !id) return;
-  embedded=true;
-  cam.src='https://www.youtube.com/embed/'+id+'?autoplay=1&mute=1&playsinline=1&rel=0';
-  const w=$('camwait'); if(w) w.style.display='none';
+let started=false;
+function setEmbed(){
+  if(started) return; started=true;
+  const HLS_URL='/hls/stream.m3u8';
+  if(window.Hls && Hls.isSupported()){
+    const hls=new Hls({lowLatencyMode:false,maxBufferLength:60,backBufferLength:30,liveSyncDurationCount:8,liveMaxLatencyDurationCount:20});
+    hls.loadSource(HLS_URL); hls.attachMedia(cam);
+    hls.on(Hls.Events.ERROR,(e,d)=>{ if(d&&d.fatal) setTimeout(()=>{try{hls.loadSource(HLS_URL);hls.startLoad();}catch(_){}} ,1500); });
+  } else if(cam.canPlayType && cam.canPlayType('application/vnd.apple.mpegurl')){ cam.src=HLS_URL; }
+  if(cam.play) cam.play().catch(()=>{});
 }
 
 // ---- seletor de classe (A) ----
