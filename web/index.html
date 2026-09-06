@@ -197,7 +197,7 @@ const cam=$('cam');
 const HLS_URL='/hls/stream.m3u8';
 function startHls(){
   if(window.Hls && Hls.isSupported()){
-    const hls=new Hls({liveSyncDurationCount:3, lowLatencyMode:true, backBufferLength:10});
+    const hls=new Hls({lowLatencyMode:false, maxBufferLength:30, backBufferLength:30, liveSyncDurationCount:6, liveMaxLatencyDurationCount:15});
     hls.loadSource(HLS_URL); hls.attachMedia(cam);
     hls.on(Hls.Events.ERROR,(e,d)=>{ if(d && d.fatal){ setTimeout(()=>{try{hls.loadSource(HLS_URL);hls.startLoad();cam.play();}catch(_){}} ,1500); } });
   } else if(cam.canPlayType('application/vnd.apple.mpegurl')){

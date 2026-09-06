@@ -64,8 +64,8 @@ def _start_hls(w, h, out_w, hls_dir: Path, fps: float):
         "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{w}x{h}", "-r", r, "-i", "pipe:0", "-an",
         "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency", "-pix_fmt", "yuv420p",
         "-vf", f"scale={out_w}:-2", "-r", r, "-g", str(int(fps * 2)), "-sc_threshold", "0",
-        "-b:v", "1200k", "-maxrate", "1500k", "-bufsize", "2500k",
-        "-f", "hls", "-hls_time", "2", "-hls_list_size", "6",
+        "-b:v", "700k", "-maxrate", "900k", "-bufsize", "1800k",
+        "-f", "hls", "-hls_time", "2", "-hls_list_size", "10",
         "-hls_flags", "delete_segments+omit_endlist+independent_segments",
         str(hls_dir / "stream.m3u8"),
     ]
@@ -168,13 +168,13 @@ class OracleEngine(threading.Thread):
         round_s = float(self.cfg.get("round_seconds", 90))
         pause_s = float(self.cfg.get("pause_seconds", 15))
         detect_every = max(1, int(self.cfg.get("detect_every", 2)))
-        stream_w = int(self.cfg.get("stream_width", 960))
+        stream_w = int(self.cfg.get("stream_width", 640))
         save_crossings = bool(self.cfg.get("save_crossings", True))
         cross_dir = Path(self.cfg.get("crossings_dir", "runs/crossings"))
         if save_crossings:
             cross_dir.mkdir(parents=True, exist_ok=True)
         hls_on = bool(self.cfg.get("hls", True))
-        hls_fps = float(self.cfg.get("hls_fps", 20))
+        hls_fps = float(self.cfg.get("hls_fps", 15))
         hls_dir = Path(self.cfg.get("hls_dir", "web/hls"))
 
         cap = _open_capture(target)
