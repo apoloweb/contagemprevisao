@@ -234,6 +234,7 @@ class OracleEngine(threading.Thread):
                     "betting_s": betting_s,
                     "round_s": round_s,
                     "pause_s": pause_s,
+                    "count_remaining_s": round(max(0.0, round_s - rounds.elapsed), 1),
                     "count": counter.count,
                     "per_class": dict(counter.per_class),
                     "threshold": self._threshold,

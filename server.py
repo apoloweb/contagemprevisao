@@ -112,8 +112,8 @@ class App:
                 if st.get("ready") and m and m.open and m.betting_open:
                     x = m.threshold
                     c = int(st.get("count", 0))
-                    rem = float(st.get("remaining_s", 0))
-                    rs = float(st.get("round_seconds", 60))
+                    rem = float(st.get("count_remaining_s", 0))   # tempo restante de CONTAGEM
+                    rs = float(st.get("round_s", 60))
                     p = compute_fair(c, x, rem, rs)
                     po = min(98, max(2, round(p * 100)))
                     pu = 100 - po
