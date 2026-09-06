@@ -11,6 +11,9 @@ reaproveitam as ultimas deteccoes. Assim o video segue na taxa da camera (sem
 travar por causa da inferencia) e a GPU alivia. O frame e reduzido (stream_width)
 antes de virar JPEG, deixando o MJPEG mais leve no navegador.
 
+Auditoria: a cada +1 na contagem, salva um print do momento em runs/crossings/
+(rNNN_nMMM.jpg) para conferir/medir a acuracia depois.
+
 Callbacks (disparados fora do lock):
   on_betting_close()            -> fecha as apostas do mercado
   on_round_end(result)          -> liquida o mercado com a contagem final
@@ -21,6 +24,7 @@ from __future__ import annotations
 
 import threading
 import time
+from pathlib import Path
 
 import cv2
 
@@ -125,6 +129,10 @@ class OracleEngine(threading.Thread):
         pause_s = float(self.cfg.get("pause_seconds", 15))
         detect_every = max(1, int(self.cfg.get("detect_every", 2)))
         stream_w = int(self.cfg.get("stream_width", 960))
+        save_crossings = bool(self.cfg.get("save_crossings", True))
+        cross_dir = Path(self.cfg.get("crossings_dir", "runs/crossings"))
+        if save_crossings:
+            cross_dir.mkdir(parents=True, exist_ok=True)
 
         cap = _open_capture(target)
         ok, frame = cap.read()
@@ -145,6 +153,7 @@ class OracleEngine(threading.Thread):
         t_prev = time.time()
         fi = 0
         last_tracks = []
+        prev_count = 0
 
         while not self._stop.is_set():
             ok, frame = cap.read()
@@ -198,6 +207,7 @@ class OracleEngine(threading.Thread):
                 if self.on_new_round:
                     self._safe(self.on_new_round, prev_final, rounds.round_id)
                 counter.reset()
+                prev_count = 0
                 if self._pending_threshold is not None:
                     self._threshold = self._pending_threshold
                     self._pending_threshold = None
@@ -208,6 +218,12 @@ class OracleEngine(threading.Thread):
             draw_boxes(frame, tracks)
             draw_hud(frame, counter.count, rounds.phase_remaining, rounds.round_id, dict(counter.per_class))
             self._draw_phase(frame, rounds.phase)
+
+            # auditoria: salva o print do momento de cada cruzamento
+            if save_crossings and counter.count > prev_count:
+                snap = cv2.resize(frame, (720, int(h * 720 / w))) if w > 720 else frame
+                cv2.imwrite(str(cross_dir / f"r{rounds.round_id:03d}_n{counter.count:03d}.jpg"), snap)
+                prev_count = counter.count
 
             out = frame
             if stream_w and w > stream_w:
