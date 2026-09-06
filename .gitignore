@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+runs/
+*.mp4
+# pesos YOLO baixados automaticamente
+yolo*.pt

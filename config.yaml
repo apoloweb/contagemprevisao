@@ -1,0 +1,36 @@
+# ------------------------------------------------------------------
+# Configuracao do oraculo de contagem. A CLI sobrescreve estes valores.
+# ------------------------------------------------------------------
+
+# Fonte de video: webcam("0"), arquivo, .m3u8, ou pagina de live (YouTube etc.)
+source: ""
+
+# Modelo YOLO (baixa sozinho na 1a vez). n=rapido, s/m=mais preciso.
+model: yolo11n.pt
+
+# O que contar (nomes COCO). Ex.: veiculos ou [person].
+classes: [car, motorcycle, bus, truck]
+
+# Linha de contagem: "h", "v" ou "x1,y1,x2,y2" (px ou fracoes <=1)
+line: h
+
+# Duracao da rodada em segundos (4m40s = 280)
+round_seconds: 280
+
+# Confianca minima da deteccao (0-1)
+conf: 0.3
+
+# GPU: 0 (primeira GPU) ou "cpu"
+device: 0
+
+# Altura maxima do stream ao resolver via yt-dlp
+max_height: 720
+
+# Pasta de saida (results.jsonl, state.json, annotated.mp4)
+outdir: runs
+
+# Mostrar janela ao vivo (True/False)
+show: false
+
+# Gravar mp4 anotado (True/False)
+record: false

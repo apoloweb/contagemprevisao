@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Previsão — Mercado ao vivo (demo)</title>
+<style>
+  :root{
+    --bg:#0e0f13; --panel:#181a20; --panel2:#20232c; --line:#2a2e3a;
+    --txt:#e8eaf0; --mut:#9aa3b2; --green:#22c55e; --red:#ef4444;
+    --cyan:#22d3ee; --accent:#7c3aed;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+       font:14px/1.45 system-ui,Segoe UI,Roboto,Arial,sans-serif}
+  a{color:var(--cyan)}
+  header{display:flex;align-items:center;justify-content:space-between;
+         padding:12px 18px;border-bottom:1px solid var(--line);background:#0b0c10}
+  .brand{font-weight:800;letter-spacing:.5px}
+  .brand span{color:var(--green)}
+  .badge{font-size:11px;color:var(--mut);border:1px solid var(--line);
+         padding:2px 8px;border-radius:20px;margin-left:8px}
+  .wallet{font-size:13px;color:var(--mut)}
+  .wallet b{color:var(--txt);font-size:16px}
+  .wrap{display:flex;gap:16px;padding:16px;align-items:flex-start;flex-wrap:wrap}
+  .left{flex:1 1 560px;min-width:320px}
+  .right{flex:1 1 360px;min-width:320px;display:flex;flex-direction:column;gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}
+  .vidbox{position:relative;background:#000;border-radius:14px;overflow:hidden;border:1px solid var(--line)}
+  .vidbox img{display:block;width:100%;height:auto}
+  .dot{position:absolute;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;
+       background:var(--cyan);box-shadow:0 0 0 3px rgba(34,211,238,.3);pointer-events:none}
+  .calhint{position:absolute;left:10px;bottom:10px;background:rgba(0,0,0,.6);
+           padding:6px 10px;border-radius:8px;font-size:12px;color:#fff;display:none}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel2);
+         color:var(--txt);padding:8px 12px;border-radius:10px}
+  button:hover{border-color:#3a4050}
+  button.active{border-color:var(--cyan);color:var(--cyan)}
+  .q{font-size:18px;font-weight:700;margin:0 0 2px}
+  .sub{color:var(--mut);font-size:12px}
+  .bigrow{display:flex;gap:12px;margin:12px 0}
+  .stat{flex:1;background:var(--panel2);border-radius:12px;padding:10px 12px;text-align:center}
+  .stat .n{font-size:30px;font-weight:800;line-height:1}
+  .stat.count .n{color:var(--green)}
+  .stat.timer .n{color:#fff;font-variant-numeric:tabular-nums}
+  .stat.timer.warn .n{color:var(--red)}
+  .stat .l{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+  .sides{display:flex;gap:10px}
+  .side{flex:1;border-radius:12px;padding:12px;border:1px solid var(--line);text-align:center;background:var(--panel2)}
+  .side .lab{font-weight:700}
+  .side .odds{font-size:24px;font-weight:800;margin:2px 0}
+  .side .pct{font-size:12px;color:var(--mut)}
+  .side.over{border-color:rgba(34,197,94,.4)}
+  .side.over .odds{color:var(--green)}
+  .side.under{border-color:rgba(239,68,68,.4)}
+  .side.under .odds{color:var(--red)}
+  .buyrow{display:flex;gap:10px;margin-top:10px}
+  .buyrow button{flex:1;font-weight:700;border:none;color:#08130b}
+  .buy-over{background:var(--green)}
+  .buy-under{background:var(--red);color:#1a0808}
+  .qtyrow{display:flex;align-items:center;gap:8px;margin-top:10px}
+  .qtyrow input{width:80px;background:var(--panel2);border:1px solid var(--line);
+                color:var(--txt);border-radius:8px;padding:8px;font:inherit;text-align:center}
+  .chips{display:flex;gap:6px}
+  .chips button{padding:6px 10px;font-size:12px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{padding:3px 6px;text-align:right}
+  th{color:var(--mut);font-weight:600;text-transform:uppercase;font-size:10px;letter-spacing:.4px}
+  .book{display:flex;gap:12px}
+  .book>div{flex:1}
+  .book h4{margin:0 0 6px;font-size:12px}
+  .book .over h4{color:var(--green)} .book .under h4{color:var(--red)}
+  td.bar{position:relative}
+  .pos{display:flex;gap:10px}
+  .pos>div{flex:1;background:var(--panel2);border-radius:10px;padding:8px 10px}
+  .pos .n{font-size:18px;font-weight:800}
+  .hist{max-height:160px;overflow:auto}
+  .hist .row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line);font-size:12px}
+  .win-over{color:var(--green)} .win-under{color:var(--red)}
+  .muted{color:var(--mut)}
+  h3{margin:0 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--mut)}
+  .note{font-size:11px;color:var(--mut);margin-top:6px}
+</style>
+</head>
+<body>
+<header>
+  <div><span class="brand">previsão<span>.</span></span><span class="badge">DEMO · moeda virtual</span></div>
+  <div class="wallet">saldo <b id="bal">—</b> <span id="reserved" class="muted"></span></div>
+</header>
+
+<div class="wrap">
+  <!-- ESQUERDA: video ao vivo com overlay do oraculo -->
+  <div class="left">
+    <div class="vidbox">
+      <img id="cam" src="/stream.mjpg" alt="transmissão ao vivo">
+      <div id="dotA" class="dot" hidden></div>
+      <div id="dotB" class="dot" hidden></div>
+      <div id="calhint" class="calhint">Clique 2 pontos no vídeo para definir a linha de contagem</div>
+    </div>
+    <div class="toolbar">
+      <button id="btnCal">🎯 Calibrar linha</button>
+      <span class="sub" style="align-self:center">Contar:</span>
+      <button class="cls active" data-classes="car,motorcycle,bus,truck">🚗 Veículos</button>
+      <button class="cls" data-classes="person">🚶 Pessoas</button>
+      <span id="fps" class="sub" style="margin-left:auto;align-self:center"></span>
+    </div>
+    <div class="note">O contador, o cronômetro e as caixas de detecção são renderizados pelo oráculo (visão computacional) direto no vídeo.</div>
+  </div>
+
+  <!-- DIREITA: mercado -->
+  <div class="right">
+    <div class="card">
+      <p class="q" id="question">—</p>
+      <div class="sub" id="roundinfo">rodada —</div>
+      <div class="bigrow">
+        <div class="stat count"><div class="l">Contagem atual</div><div class="n" id="count">0</div></div>
+        <div class="stat timer" id="timerbox"><div class="l">Tempo</div><div class="n" id="timer">--:--</div></div>
+      </div>
+      <div class="sides">
+        <div class="side over"><div class="lab" id="labOver">Mais de X</div><div class="odds" id="oddsOver">—</div><div class="pct" id="pctOver"></div></div>
+        <div class="side under"><div class="lab" id="labUnder">Até X</div><div class="odds" id="oddsUnder">—</div><div class="pct" id="pctUnder"></div></div>
+      </div>
+      <div class="qtyrow">
+        <span class="sub">Qtd (ações):</span>
+        <input id="qty" type="number" min="1" value="10">
+        <div class="chips">
+          <button data-q="5">5</button><button data-q="10">10</button>
+          <button data-q="50">50</button><button data-q="100">100</button>
+        </div>
+      </div>
+      <div class="buyrow">
+        <button class="buy-over" id="buyOver">Comprar “Mais de X”</button>
+        <button class="buy-under" id="buyUnder">Comprar “Até X”</button>
+      </div>
+      <div id="msg" class="note"></div>
+    </div>
+
+    <div class="card">
+      <h3>Suas posições (nesta rodada)</h3>
+      <div class="pos">
+        <div><div class="sub">Mais de X</div><div class="n win-over" id="posOver">0</div><div class="sub" id="payOver"></div></div>
+        <div><div class="sub">Até X</div><div class="n win-under" id="posUnder">0</div><div class="sub" id="payUnder"></div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Livro de ofertas</h3>
+      <div class="book">
+        <div class="over"><h4>Mais de X (compra)</h4><table id="bookOver"><thead><tr><th>Preço</th><th>Qtd</th></tr></thead><tbody></tbody></table></div>
+        <div class="under"><h4>Até X (compra)</h4><table id="bookUnder"><thead><tr><th>Preço</th><th>Qtd</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Rodadas anteriores</h3>
+      <div class="hist" id="hist"><div class="sub">aguardando a primeira rodada fechar…</div></div>
+      <button id="reset" style="margin-top:10px;width:100%">Resetar carteira (R$ 1.000)</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const rs = c => 'R$ ' + (c/100).toFixed(2).replace('.',',');
+const odds = p => p ? (100/p).toFixed(2).replace('.',',')+'x' : '—';
+
+async function post(url, body){
+  const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body||{})});
+  return r.json();
+}
+
+// ---- calibracao (A): clicar 2 pontos ----
+let calibrating=false, pts=[];
+const cam=$('cam');
+$('btnCal').onclick=()=>{ calibrating=!calibrating; pts=[];
+  $('dotA').hidden=$('dotB').hidden=true;
+  $('calhint').style.display=calibrating?'block':'none';
+  $('btnCal').classList.toggle('active',calibrating);
+};
+cam.addEventListener('click', async e=>{
+  if(!calibrating) return;
+  const r=cam.getBoundingClientRect();
+  const fx=(e.clientX-r.left)/r.width, fy=(e.clientY-r.top)/r.height;
+  pts.push([fx,fy]);
+  const dot=$(pts.length===1?'dotA':'dotB');
+  dot.hidden=false; dot.style.left=(fx*100)+'%'; dot.style.top=(fy*100)+'%';
+  if(pts.length===2){
+    await post('/api/line',{x1:pts[0][0],y1:pts[0][1],x2:pts[1][0],y2:pts[1][1]});
+    calibrating=false; $('calhint').style.display='none'; $('btnCal').classList.remove('active');
+    setTimeout(()=>{ $('dotA').hidden=$('dotB').hidden=true; }, 1200);
+    pts=[];
+  }
+});
+
+// ---- seletor de classe (A) ----
+document.querySelectorAll('.cls').forEach(b=>b.onclick=async()=>{
+  document.querySelectorAll('.cls').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  await post('/api/classes',{classes:b.dataset.classes.split(',')});
+});
+
+// ---- quantidade ----
+document.querySelectorAll('.chips button').forEach(b=>b.onclick=()=>{ $('qty').value=b.dataset.q; });
+
+// ---- comprar (C) ----
+async function buy(side){
+  const qty=parseInt($('qty').value||'0',10);
+  const res=await post('/api/order',{side,qty});
+  const msg=$('msg');
+  if(res.error){ msg.textContent='⚠ '+res.error; msg.style.color='var(--red)'; }
+  else{
+    const f=(res.fills||[]).reduce((s,x)=>s+x.qty,0);
+    msg.textContent = f>0 ? ('✔ Comprou '+f+' ação(ões) de "'+(side==='over'?'Mais de':'Até')+'".')
+                          : '✔ Ordem no livro (aguardando casar).';
+    msg.style.color='var(--green)';
+    refresh();
+  }
+}
+$('buyOver').onclick=()=>buy('over');
+$('buyUnder').onclick=()=>buy('under');
+$('reset').onclick=async()=>{ await post('/api/reset',{}); refresh(); };
+
+// ---- render ----
+function fillBook(tableId, levels, cls){
+  const tb=$(tableId).querySelector('tbody'); tb.innerHTML='';
+  const max=Math.max(1,...(levels||[]).map(l=>l.qty));
+  (levels||[]).forEach(l=>{
+    const tr=document.createElement('tr');
+    const w=(l.qty/max*100).toFixed(0);
+    tr.innerHTML='<td>'+l.price+'¢</td><td class="bar" style="background:linear-gradient(90deg,transparent '+(100-w)+'%, '+cls+' '+(100-w)+'%)">'+l.qty+'</td>';
+    tb.appendChild(tr);
+  });
+  if(!levels||!levels.length) tb.innerHTML='<tr><td colspan="2" class="muted">—</td></tr>';
+}
+
+function render(d){
+  const e=d.engine||{}, m=d.market||{}, you=d.you||{};
+  const X=(m.threshold!=null?m.threshold:(e.threshold||0));
+  $('bal').textContent=rs(you.balance||0);
+  $('reserved').textContent=(you.reserved? '· reservado '+rs(you.reserved):'');
+  $('question').textContent=m.question||e.question||'—';
+  $('roundinfo').textContent='rodada '+(m.round_id!=null?m.round_id:(e.round_id||'—'))+' · meta: mais de '+X;
+  $('count').textContent=(e.count!=null?e.count:0);
+  const rem=e.remaining_s||0, mm=String(Math.floor(rem/60)).padStart(2,'0'), ssv=String(Math.floor(rem%60)).padStart(2,'0');
+  $('timer').textContent=mm+':'+ssv;
+  $('timerbox').classList.toggle('warn', rem<=15);
+  $('fps').textContent=e.fps? ('detecção '+e.fps+' fps'):'';
+
+  $('labOver').textContent='Mais de '+X;
+  $('labUnder').textContent='Até '+X;
+  const buyOver = 100-(m.best_under!=null?m.best_under:50);
+  const buyUnder = 100-(m.best_over!=null?m.best_over:50);
+  $('oddsOver').textContent=odds(buyOver);
+  $('oddsUnder').textContent=odds(buyUnder);
+  $('pctOver').textContent=buyOver+'% prob · '+buyOver+'¢/ação';
+  $('pctUnder').textContent=buyUnder+'% prob · '+buyUnder+'¢/ação';
+  $('buyOver').textContent='Comprar “Mais de '+X+'”';
+  $('buyUnder').textContent='Comprar “Até '+X+'”';
+
+  const po=(you.positions||{}).over||0, pu=(you.positions||{}).under||0;
+  $('posOver').textContent=po; $('posUnder').textContent=pu;
+  $('payOver').textContent=po? ('ganha '+rs(po*100)):'';
+  $('payUnder').textContent=pu? ('ganha '+rs(pu*100)):'';
+
+  fillBook('bookOver', m.over_bids, 'rgba(34,197,94,.25)');
+  fillBook('bookUnder', m.under_bids, 'rgba(239,68,68,.25)');
+
+  const h=$('hist');
+  if((d.history||[]).length){
+    h.innerHTML=d.history.slice().reverse().map(function(r){
+      const w=r.winner==='over'?'win-over':'win-under';
+      const wl=r.winner==='over'?('Mais de '+r.threshold):('Até '+r.threshold);
+      const yp=r.you_payout? (' · você '+rs(r.you_payout)):'';
+      return '<div class="row"><span>#'+r.round_id+' · contou '+r.final_count+'</span>'+
+             '<span class="'+w+'">'+wl+' venceu'+yp+'</span></div>';
+    }).join('');
+  }
+}
+
+async function refresh(){
+  try{ const d=await (await fetch('/api/state')).json(); render(d); }
+  catch(err){}
+}
+refresh();
+setInterval(refresh, 1000);
+</script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+# ATENCAO: instalar torch/torchvision com CUDA ANTES (ver README.md):
+#   uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+ultralytics>=8.3.0
+opencv-python>=4.9
+yt-dlp>=2024.8.6
+pyyaml>=6.0
+numpy>=1.26
