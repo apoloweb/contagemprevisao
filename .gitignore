@@ -5,3 +5,6 @@ runs/
 *.mp4
 # pesos YOLO baixados automaticamente
 yolo*.pt
+
+# segmentos HLS gerados em runtime
+web/hls/

@@ -33,7 +33,7 @@
   .right{flex:1 1 360px;min-width:320px;display:flex;flex-direction:column;gap:12px}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}
   .vidbox{position:relative;background:#000;border-radius:14px;overflow:hidden;border:1px solid var(--line)}
-  .vidbox img{display:block;width:100%;height:auto}
+  .vidbox img,.vidbox video{display:block;width:100%;height:auto;background:#000}
   .dot{position:absolute;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;
        background:var(--cyan);box-shadow:0 0 0 3px rgba(34,211,238,.3);pointer-events:none}
   .calhint{position:absolute;left:10px;bottom:10px;background:rgba(0,0,0,.6);
@@ -109,7 +109,7 @@
   <!-- ESQUERDA: video ao vivo com overlay do oraculo -->
   <div class="left">
     <div class="vidbox">
-      <img id="cam" src="/stream.mjpg" alt="transmissão ao vivo">
+      <video id="cam" autoplay muted playsinline></video>
       <div id="dotA" class="dot" hidden></div>
       <div id="dotB" class="dot" hidden></div>
       <div id="calhint" class="calhint">Clique 2 pontos no vídeo para definir a linha de contagem</div>
@@ -177,6 +177,7 @@
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const rs = c => 'R$ ' + (c/100).toFixed(2).replace('.',',');
@@ -191,6 +192,20 @@ async function post(url, body){
 // ---- calibracao (A): clicar 2 pontos ----
 let calibrating=false, pts=[];
 const cam=$('cam');
+
+// ---- player HLS (video fluido) ----
+const HLS_URL='/hls/stream.m3u8';
+function startHls(){
+  if(window.Hls && Hls.isSupported()){
+    const hls=new Hls({liveSyncDurationCount:3, lowLatencyMode:true, backBufferLength:10});
+    hls.loadSource(HLS_URL); hls.attachMedia(cam);
+    hls.on(Hls.Events.ERROR,(e,d)=>{ if(d && d.fatal){ setTimeout(()=>{try{hls.loadSource(HLS_URL);hls.startLoad();cam.play();}catch(_){}} ,1500); } });
+  } else if(cam.canPlayType('application/vnd.apple.mpegurl')){
+    cam.src=HLS_URL; // Safari nativo
+  }
+  cam.play().catch(()=>{});
+}
+startHls();
 $('btnCal').onclick=()=>{ calibrating=!calibrating; pts=[];
   $('dotA').hidden=$('dotB').hidden=true;
   $('calhint').style.display=calibrating?'block':'none';

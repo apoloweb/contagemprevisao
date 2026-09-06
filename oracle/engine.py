@@ -7,21 +7,19 @@ Loop em background com o ciclo do jogo em FASES (ver PhasedRound):
 Ao virar a rodada, o alvo X da proxima = contagem final desta.
 
 Fluidez: o YOLO roda so a cada 'detect_every' frames; os quadros intermediarios
-reaproveitam as ultimas deteccoes. Assim o video segue na taxa da camera (sem
-travar por causa da inferencia) e a GPU alivia. O frame e reduzido (stream_width)
-antes de virar JPEG, deixando o MJPEG mais leve no navegador.
+reaproveitam as ultimas deteccoes. O video anotado e transmitido como HLS
+(H.264) via ffmpeg -> reproducao fluida no navegador (hls.js). Um JPEG do ultimo
+frame tambem fica disponivel (MJPEG/snapshot).
 
-Auditoria: a cada +1 na contagem, salva um print do momento em runs/crossings/
-(rNNN_nMMM.jpg) para conferir/medir a acuracia depois.
+Auditoria: a cada +1 na contagem, salva um print do momento em runs/crossings/.
 
-Callbacks (disparados fora do lock):
-  on_betting_close()            -> fecha as apostas do mercado
-  on_round_end(result)          -> liquida o mercado com a contagem final
-  on_new_round(prev_final, rid) -> abre o mercado da proxima rodada
+Callbacks (fora do lock): on_betting_close(), on_round_end(result),
+on_new_round(prev_final, rid).
 """
 
 from __future__ import annotations
 
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -55,6 +53,22 @@ def _open_capture(target):
 def line_from_frac(frac, w, h):
     x1, y1, x2, y2 = frac
     return ((x1 * w, y1 * h), (x2 * w, y2 * h))
+
+
+def _start_hls(w, h, out_w, hls_dir: Path):
+    """ffmpeg lendo frames BGR crus do stdin e publicando HLS (H.264)."""
+    cmd = [
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{w}x{h}",
+        "-use_wallclock_as_timestamps", "1", "-i", "pipe:0", "-an",
+        "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
+        "-pix_fmt", "yuv420p", "-vf", f"scale={out_w}:-2", "-g", "40", "-sc_threshold", "0",
+        "-f", "hls", "-hls_time", "1", "-hls_list_size", "5",
+        "-hls_flags", "delete_segments+omit_endlist+independent_segments",
+        str(hls_dir / "stream.m3u8"),
+    ]
+    return subprocess.Popen(cmd, stdin=subprocess.PIPE,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 class OracleEngine(threading.Thread):
@@ -133,6 +147,9 @@ class OracleEngine(threading.Thread):
         cross_dir = Path(self.cfg.get("crossings_dir", "runs/crossings"))
         if save_crossings:
             cross_dir.mkdir(parents=True, exist_ok=True)
+        hls_on = bool(self.cfg.get("hls", True))
+        hls_fps = float(self.cfg.get("hls_fps", 20))
+        hls_dir = Path(self.cfg.get("hls_dir", "web/hls"))
 
         cap = _open_capture(target)
         ok, frame = cap.read()
@@ -145,6 +162,19 @@ class OracleEngine(threading.Thread):
             return
         h, w = frame.shape[:2]
 
+        ff = None
+        if hls_on:
+            hls_dir.mkdir(parents=True, exist_ok=True)
+            for old in hls_dir.glob("stream*"):
+                try:
+                    old.unlink()
+                except Exception:
+                    pass
+            try:
+                ff = _start_hls(w, h, stream_w, hls_dir)
+            except Exception as e:
+                print("[engine] HLS off (ffmpeg falhou):", e)
+
         counter = LineCounter(line_from_frac(self._line_frac, w, h))
         rounds = PhasedRound(betting_s, round_s, pause_s)
         prev_phase = rounds.phase
@@ -154,6 +184,7 @@ class OracleEngine(threading.Thread):
         fi = 0
         last_tracks = []
         prev_count = 0
+        last_hls = 0.0
 
         while not self._stop.is_set():
             ok, frame = cap.read()
@@ -165,7 +196,6 @@ class OracleEngine(threading.Thread):
 
             self._apply_pending(counter, w, h)
 
-            # roda o YOLO so a cada 'detect_every' frames -> video fluido, GPU leve
             fi += 1
             if fi % detect_every == 0 or not last_tracks:
                 class_ids = [COCO[c] for c in self._classes if c in COCO] or None
@@ -188,7 +218,6 @@ class OracleEngine(threading.Thread):
                     counter.update(dets)
             tracks = last_tracks
 
-            # transicoes de fase
             phase = rounds.phase
             if phase != prev_phase:
                 if prev_phase == "betting" and phase != "betting" and self.on_betting_close:
@@ -200,7 +229,6 @@ class OracleEngine(threading.Thread):
                         self._safe(self.on_round_end, result)
                 prev_phase = phase
 
-            # fim do ciclo -> abre a proxima rodada (alvo = contagem desta)
             if rounds.cycle_over:
                 prev_final = counter.count
                 rounds.next_round()
@@ -213,18 +241,25 @@ class OracleEngine(threading.Thread):
                     self._pending_threshold = None
                 prev_phase = rounds.phase
 
-            # overlay (desenha as ultimas deteccoes em todo frame)
             draw_line(frame, counter.a, counter.b)
             draw_boxes(frame, tracks)
             draw_hud(frame, counter.count, rounds.phase_remaining, rounds.round_id, dict(counter.per_class))
             self._draw_phase(frame, rounds.phase)
 
-            # auditoria: salva o print do momento de cada cruzamento
             if save_crossings and counter.count > prev_count:
                 snap = cv2.resize(frame, (720, int(h * 720 / w))) if w > 720 else frame
                 cv2.imwrite(str(cross_dir / f"r{rounds.round_id:03d}_n{counter.count:03d}.jpg"), snap)
                 prev_count = counter.count
 
+            # HLS: escreve o frame anotado no ffmpeg (limitado a ~hls_fps)
+            if ff is not None and (time.time() - last_hls) >= 1.0 / hls_fps:
+                try:
+                    ff.stdin.write(frame.tobytes())
+                    last_hls = time.time()
+                except Exception:
+                    ff = None
+
+            # JPEG do ultimo frame (fallback/snapshot)
             out = frame
             if stream_w and w > stream_w:
                 out = cv2.resize(frame, (stream_w, int(h * stream_w / w)))
@@ -263,6 +298,12 @@ class OracleEngine(threading.Thread):
                 }
 
         cap.release()
+        if ff is not None:
+            try:
+                ff.stdin.close()
+                ff.terminate()
+            except Exception:
+                pass
 
     @staticmethod
     def _safe(fn, *args):

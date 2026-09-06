@@ -193,6 +193,13 @@ def make_handler(app: App):
                 self._send_json(app.state_json())
             elif path == "/stream.mjpg":
                 self._stream_mjpeg()
+            elif path.startswith("/hls/"):
+                name = path[len("/hls/"):]
+                if name and "/" not in name and "\\" not in name and ".." not in name:
+                    ct = "application/vnd.apple.mpegurl" if name.endswith(".m3u8") else "video/mp2t"
+                    self._serve_file(WEB_DIR / "hls" / name, ct)
+                else:
+                    self._send_json({"error": "not found"}, 404)
             else:
                 self._send_json({"error": "not found"}, 404)
 
