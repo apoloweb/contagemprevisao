@@ -6,6 +6,11 @@ Loop em background com o ciclo do jogo em FASES (ver PhasedRound):
   pause   -> rodada liquidada, mostrando o resultado
 Ao virar a rodada, o alvo X da proxima = contagem final desta.
 
+Fluidez: o YOLO roda so a cada 'detect_every' frames; os quadros intermediarios
+reaproveitam as ultimas deteccoes. Assim o video segue na taxa da camera (sem
+travar por causa da inferencia) e a GPU alivia. O frame e reduzido (stream_width)
+antes de virar JPEG, deixando o MJPEG mais leve no navegador.
+
 Callbacks (disparados fora do lock):
   on_betting_close()            -> fecha as apostas do mercado
   on_round_end(result)          -> liquida o mercado com a contagem final
@@ -67,7 +72,7 @@ class OracleEngine(threading.Thread):
         self._pending_line = None
         self._pending_classes = None
         self._pending_threshold = None
-        self._jpeg_quality = int(cfg.get("jpeg_quality", 70))
+        self._jpeg_quality = int(cfg.get("jpeg_quality", 68))
 
     # ---- API thread-safe ----
     def get_jpeg(self):
@@ -114,9 +119,12 @@ class OracleEngine(threading.Thread):
         model = YOLO(self.cfg.get("model", "yolo11s.pt"))
         device = self.cfg.get("device", 0)
         conf = float(self.cfg.get("conf", 0.3))
+        imgsz = int(self.cfg.get("imgsz", 640))
         betting_s = float(self.cfg.get("betting_seconds", 30))
         round_s = float(self.cfg.get("round_seconds", 90))
         pause_s = float(self.cfg.get("pause_seconds", 15))
+        detect_every = max(1, int(self.cfg.get("detect_every", 2)))
+        stream_w = int(self.cfg.get("stream_width", 960))
 
         cap = _open_capture(target)
         ok, frame = cap.read()
@@ -135,37 +143,41 @@ class OracleEngine(threading.Thread):
         enc = [int(cv2.IMWRITE_JPEG_QUALITY), self._jpeg_quality]
         fps_ema = 0.0
         t_prev = time.time()
+        fi = 0
+        last_tracks = []
 
         while not self._stop.is_set():
             ok, frame = cap.read()
             if not ok or frame is None:
                 cap.release()
-                time.sleep(1.5)
+                time.sleep(1.0)
                 cap = _open_capture(target)
                 continue
 
             self._apply_pending(counter, w, h)
 
-            class_ids = [COCO[c] for c in self._classes if c in COCO] or None
-            res = model.track(
-                frame, persist=True, conf=conf, classes=class_ids,
-                tracker="bytetrack.yaml", device=device, verbose=False,
-            )[0]
-
-            tracks = []
-            if res.boxes is not None and res.boxes.id is not None:
-                xyxy = res.boxes.xyxy.cpu().numpy()
-                ids = res.boxes.id.int().cpu().tolist()
-                cls = res.boxes.cls.int().cpu().tolist()
-                for box, tid, c in zip(xyxy, ids, cls):
-                    cx = (box[0] + box[2]) / 2.0
-                    cy = (box[1] + box[3]) / 2.0
-                    tracks.append({"id": tid, "cls": c, "name": model.names[c],
-                                   "box": box, "center": (cx, cy)})
-
-            # so conta enquanto a contagem esta ativa (betting + running); na pausa congela
-            if rounds.counting_active:
-                counter.update(tracks)
+            # roda o YOLO so a cada 'detect_every' frames -> video fluido, GPU leve
+            fi += 1
+            if fi % detect_every == 0 or not last_tracks:
+                class_ids = [COCO[c] for c in self._classes if c in COCO] or None
+                res = model.track(
+                    frame, persist=True, conf=conf, classes=class_ids, imgsz=imgsz,
+                    tracker="bytetrack.yaml", device=device, verbose=False,
+                )[0]
+                dets = []
+                if res.boxes is not None and res.boxes.id is not None:
+                    xyxy = res.boxes.xyxy.cpu().numpy()
+                    ids = res.boxes.id.int().cpu().tolist()
+                    cls = res.boxes.cls.int().cpu().tolist()
+                    for box, tid, c in zip(xyxy, ids, cls):
+                        cx = (box[0] + box[2]) / 2.0
+                        cy = (box[1] + box[3]) / 2.0
+                        dets.append({"id": tid, "cls": c, "name": model.names[c],
+                                     "box": box, "center": (cx, cy)})
+                last_tracks = dets
+                if rounds.counting_active:
+                    counter.update(dets)
+            tracks = last_tracks
 
             # transicoes de fase
             phase = rounds.phase
@@ -191,12 +203,16 @@ class OracleEngine(threading.Thread):
                     self._pending_threshold = None
                 prev_phase = rounds.phase
 
-            # overlay
+            # overlay (desenha as ultimas deteccoes em todo frame)
             draw_line(frame, counter.a, counter.b)
             draw_boxes(frame, tracks)
             draw_hud(frame, counter.count, rounds.phase_remaining, rounds.round_id, dict(counter.per_class))
             self._draw_phase(frame, rounds.phase)
-            ok2, buf = cv2.imencode(".jpg", frame, enc)
+
+            out = frame
+            if stream_w and w > stream_w:
+                out = cv2.resize(frame, (stream_w, int(h * stream_w / w)))
+            ok2, buf = cv2.imencode(".jpg", out, enc)
 
             now = time.time()
             dt = now - t_prev

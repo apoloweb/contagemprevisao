@@ -241,7 +241,7 @@ def make_handler(app: App):
                     self.wfile.write(f"Content-Length: {len(jpeg)}\r\n\r\n".encode())
                     self.wfile.write(jpeg)
                     self.wfile.write(b"\r\n")
-                    time.sleep(0.066)  # ~15 fps
+                    time.sleep(0.04)  # ~25 fps
             except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
                 pass
 
