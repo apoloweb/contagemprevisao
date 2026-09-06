@@ -99,3 +99,15 @@ Rotas: `/` (pagina), `/stream.mjpg` (video), `/api/state` (estado+mercado),
 Nota: isto e um prototipo com MOEDA VIRTUAL. Dinheiro real no Brasil exige
 autorizacao da SPA (Lei 14.790/2023) e nao roda em serverless (Vercel): o
 oraculo precisa de um servidor/VM com GPU.
+
+## Logica de rodada (fases) — modelo do jogo
+Cada rodada tem 3 fases (tempos configuraveis):
+  betting  -> apostas ABERTAS + contagem rodando        (real: ~2 min)
+  running  -> apostas ENCERRADAS, contagem continua      (real: ate ~5 min)
+  pause    -> rodada liquidada, mostrando o resultado    (real: ~5 min)
+
+O alvo X da proxima rodada = contagem FINAL desta ("vai passar mais ou menos
+carros/pessoas que a rodada anterior?"). Bots so cotam na janela de apostas;
+depois o livro congela. Parametros:
+  --betting-seconds 120 --round-seconds 300 --pause-seconds 300   # valores reais
+  --betting-seconds 25  --round-seconds 70  --pause-seconds 15    # demo acelerada

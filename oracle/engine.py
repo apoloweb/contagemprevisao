@@ -1,10 +1,15 @@
 """OracleEngine: roda o oraculo numa thread e expoe frame anotado + estado.
 
-Diferente do app.py (CLI/gravacao), aqui o loop roda em background e:
-  - guarda o ultimo frame anotado como JPEG (para MJPEG no navegador)
-  - guarda o estado ao vivo (rodada, tempo, contagem) num dict protegido por lock
-  - chama on_round_end(result) quando uma rodada fecha (para liquidar o mercado)
-  - aceita mudancas ao vivo: linha de contagem, classes e limiar (threshold)
+Loop em background com o ciclo do jogo em FASES (ver PhasedRound):
+  betting -> apostas abertas + contagem rodando
+  running -> apostas encerradas, contagem continua
+  pause   -> rodada liquidada, mostrando o resultado
+Ao virar a rodada, o alvo X da proxima = contagem final desta.
+
+Callbacks (disparados fora do lock):
+  on_betting_close()            -> fecha as apostas do mercado
+  on_round_end(result)          -> liquida o mercado com a contagem final
+  on_new_round(prev_final, rid) -> abre o mercado da proxima rodada
 """
 
 from __future__ import annotations
@@ -16,11 +21,17 @@ import cv2
 
 from .counting import LineCounter
 from .overlay import draw_boxes, draw_hud, draw_line
-from .round import RoundManager, utc_now_iso
+from .round import PhasedRound, utc_now_iso
 from .source import resolve_source
 
 COCO = {"person": 0, "bicycle": 1, "car": 2, "motorcycle": 3, "bus": 5, "truck": 7}
 VEHICLES = ["car", "motorcycle", "bus", "truck"]
+
+_PHASE_LABEL = {
+    "betting": ("APOSTAS ABERTAS", (120, 220, 90)),
+    "running": ("APOSTAS ENCERRADAS - contando", (60, 190, 245)),
+    "pause": ("RODADA ENCERRADA - proxima em breve", (230, 170, 90)),
+}
 
 
 def _open_capture(target):
@@ -38,10 +49,12 @@ def line_from_frac(frac, w, h):
 
 
 class OracleEngine(threading.Thread):
-    def __init__(self, cfg: dict, on_round_end=None):
+    def __init__(self, cfg: dict, on_round_end=None, on_betting_close=None, on_new_round=None):
         super().__init__(daemon=True)
         self.cfg = cfg
         self.on_round_end = on_round_end
+        self.on_betting_close = on_betting_close
+        self.on_new_round = on_new_round
         self._lock = threading.Lock()
         self._jpeg = None
         self._state = {"ready": False}
@@ -50,12 +63,13 @@ class OracleEngine(threading.Thread):
         self._classes = list(cfg.get("classes", VEHICLES))
         self._threshold = int(cfg.get("threshold", 5))
         self._question = ""
-        self._line_frac = tuple(cfg.get("line_frac", (0.5, 0.05, 0.5, 0.65)))
+        self._line_frac = tuple(cfg.get("line_frac", (0.5, 0.42, 0.5, 0.85)))
         self._pending_line = None
         self._pending_classes = None
         self._pending_threshold = None
         self._jpeg_quality = int(cfg.get("jpeg_quality", 70))
 
+    # ---- API thread-safe ----
     def get_jpeg(self):
         with self._lock:
             return self._jpeg
@@ -79,6 +93,20 @@ class OracleEngine(threading.Thread):
     def stop(self):
         self._stop.set()
 
+    def _apply_pending(self, counter, w, h):
+        if self._pending_line is not None:
+            counter.set_line(line_from_frac(self._pending_line, w, h))
+            self._line_frac = self._pending_line
+            self._pending_line = None
+        if self._pending_classes is not None:
+            self._classes = self._pending_classes
+            self._pending_classes = None
+            counter.reset()
+        if self._pending_threshold is not None:
+            self._threshold = self._pending_threshold
+            self._pending_threshold = None
+
+    # ---- loop principal ----
     def run(self):
         from ultralytics import YOLO
 
@@ -86,7 +114,9 @@ class OracleEngine(threading.Thread):
         model = YOLO(self.cfg.get("model", "yolo11s.pt"))
         device = self.cfg.get("device", 0)
         conf = float(self.cfg.get("conf", 0.3))
-        round_seconds = float(self.cfg.get("round_seconds", 60))
+        betting_s = float(self.cfg.get("betting_seconds", 30))
+        round_s = float(self.cfg.get("round_seconds", 90))
+        pause_s = float(self.cfg.get("pause_seconds", 15))
 
         cap = _open_capture(target)
         ok, frame = cap.read()
@@ -100,7 +130,8 @@ class OracleEngine(threading.Thread):
         h, w = frame.shape[:2]
 
         counter = LineCounter(line_from_frac(self._line_frac, w, h))
-        rounds = RoundManager(round_seconds)
+        rounds = PhasedRound(betting_s, round_s, pause_s)
+        prev_phase = rounds.phase
         enc = [int(cv2.IMWRITE_JPEG_QUALITY), self._jpeg_quality]
         fps_ema = 0.0
         t_prev = time.time()
@@ -113,17 +144,7 @@ class OracleEngine(threading.Thread):
                 cap = _open_capture(target)
                 continue
 
-            if self._pending_line is not None:
-                counter.set_line(line_from_frac(self._pending_line, w, h))
-                self._line_frac = self._pending_line
-                self._pending_line = None
-            if self._pending_classes is not None:
-                self._classes = self._pending_classes
-                self._pending_classes = None
-                counter.reset()
-            if self._pending_threshold is not None:
-                self._threshold = self._pending_threshold
-                self._pending_threshold = None
+            self._apply_pending(counter, w, h)
 
             class_ids = [COCO[c] for c in self._classes if c in COCO] or None
             res = model.track(
@@ -141,22 +162,40 @@ class OracleEngine(threading.Thread):
                     cy = (box[1] + box[3]) / 2.0
                     tracks.append({"id": tid, "cls": c, "name": model.names[c],
                                    "box": box, "center": (cx, cy)})
-            counter.update(tracks)
 
-            if rounds.expired():
-                result = rounds.finalize(counter.count, counter.per_class)
-                result["threshold"] = self._threshold
-                if self.on_round_end:
-                    try:
-                        self.on_round_end(result)
-                    except Exception as e:
-                        print("[engine] erro no on_round_end:", e)
-                counter.reset()
+            # so conta enquanto a contagem esta ativa (betting + running); na pausa congela
+            if rounds.counting_active:
+                counter.update(tracks)
+
+            # transicoes de fase
+            phase = rounds.phase
+            if phase != prev_phase:
+                if prev_phase == "betting" and phase != "betting" and self.on_betting_close:
+                    self._safe(self.on_betting_close)
+                if phase == "pause" and prev_phase != "pause":
+                    result = rounds.finalize(counter.count, counter.per_class)
+                    result["threshold"] = self._threshold
+                    if self.on_round_end:
+                        self._safe(self.on_round_end, result)
+                prev_phase = phase
+
+            # fim do ciclo -> abre a proxima rodada (alvo = contagem desta)
+            if rounds.cycle_over:
+                prev_final = counter.count
                 rounds.next_round()
+                if self.on_new_round:
+                    self._safe(self.on_new_round, prev_final, rounds.round_id)
+                counter.reset()
+                if self._pending_threshold is not None:
+                    self._threshold = self._pending_threshold
+                    self._pending_threshold = None
+                prev_phase = rounds.phase
 
+            # overlay
             draw_line(frame, counter.a, counter.b)
             draw_boxes(frame, tracks)
-            draw_hud(frame, counter.count, rounds.remaining, rounds.round_id, dict(counter.per_class))
+            draw_hud(frame, counter.count, rounds.phase_remaining, rounds.round_id, dict(counter.per_class))
+            self._draw_phase(frame, rounds.phase)
             ok2, buf = cv2.imencode(".jpg", frame, enc)
 
             now = time.time()
@@ -171,8 +210,14 @@ class OracleEngine(threading.Thread):
                 self._state = {
                     "ready": True,
                     "round_id": rounds.round_id,
-                    "remaining_s": round(rounds.remaining, 1),
-                    "round_seconds": round_seconds,
+                    "phase": rounds.phase,
+                    "phase_remaining": round(rounds.phase_remaining, 1),
+                    "remaining_s": round(rounds.phase_remaining, 1),
+                    "betting_open": rounds.betting_open,
+                    "counting_active": rounds.counting_active,
+                    "betting_s": betting_s,
+                    "round_s": round_s,
+                    "pause_s": pause_s,
                     "count": counter.count,
                     "per_class": dict(counter.per_class),
                     "threshold": self._threshold,
@@ -185,3 +230,19 @@ class OracleEngine(threading.Thread):
                 }
 
         cap.release()
+
+    @staticmethod
+    def _safe(fn, *args):
+        try:
+            fn(*args)
+        except Exception as e:
+            print("[engine] erro em callback:", e)
+
+    @staticmethod
+    def _draw_phase(img, phase):
+        text, color = _PHASE_LABEL.get(phase, (phase, (255, 255, 255)))
+        w = img.shape[1]
+        (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+        x = (w - tw) // 2
+        cv2.rectangle(img, (x - 10, 96), (x + tw + 10, 96 + th + 14), (18, 18, 18), -1)
+        cv2.putText(img, text, (x, 96 + th + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2, cv2.LINE_AA)

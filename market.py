@@ -31,11 +31,15 @@ class Market:
         self.round_id = round_id
         self.threshold = threshold
         self.question = question
-        self.open = True
+        self.open = True           # False so apos liquidar
+        self.betting_open = True   # False quando encerra a janela de apostas
         self.over_bids: list[dict] = []   # lances de compra de OVER
         self.under_bids: list[dict] = []  # lances de compra de UNDER
         self.trades: list[dict] = []
         self.last_over = None
+
+    def close_betting(self) -> None:
+        self.betting_open = False
 
     def add(self, order: dict) -> None:
         book = self.over_bids if order["side"] == "over" else self.under_bids
@@ -78,6 +82,7 @@ class Market:
             "threshold": self.threshold,
             "question": self.question,
             "open": self.open,
+            "betting_open": self.betting_open,
             "over_bids": over[:8],
             "under_bids": under[:8],
             "best_over": over[0]["price"] if over else None,
@@ -121,6 +126,8 @@ class Exchange:
             m = self.market
             if m is None or not m.open:
                 return {"error": "mercado fechado"}
+            if not m.betting_open:
+                return {"error": "apostas encerradas"}
             if side not in ("over", "under"):
                 return {"error": "lado invalido"}
             price = max(1, min(99, int(price)))

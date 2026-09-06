@@ -81,6 +81,11 @@
   .muted{color:var(--mut)}
   h3{margin:0 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--mut)}
   .note{font-size:11px;color:var(--mut);margin-top:6px}
+  .phase{margin:8px 0 4px;padding:7px 10px;border-radius:9px;font-size:12px;font-weight:700;text-align:center}
+  .phase.betting{background:rgba(34,197,94,.15);color:var(--green)}
+  .phase.running{background:rgba(34,211,238,.13);color:var(--cyan)}
+  .phase.pause{background:rgba(124,58,237,.16);color:#c4b5fd}
+  button:disabled{opacity:.4;cursor:not-allowed}
 </style>
 </head>
 <body>
@@ -113,6 +118,7 @@
     <div class="card">
       <p class="q" id="question">—</p>
       <div class="sub" id="roundinfo">rodada —</div>
+      <div id="phase" class="phase betting">—</div>
       <div class="bigrow">
         <div class="stat count"><div class="l">Contagem atual</div><div class="n" id="count">0</div></div>
         <div class="stat timer" id="timerbox"><div class="l">Tempo</div><div class="n" id="timer">--:--</div></div>
@@ -243,10 +249,19 @@ function render(d){
   $('question').textContent=m.question||e.question||'—';
   $('roundinfo').textContent='rodada '+(m.round_id!=null?m.round_id:(e.round_id||'—'))+' · meta: mais de '+X;
   $('count').textContent=(e.count!=null?e.count:0);
-  const rem=e.remaining_s||0, mm=String(Math.floor(rem/60)).padStart(2,'0'), ssv=String(Math.floor(rem%60)).padStart(2,'0');
-  $('timer').textContent=mm+':'+ssv;
-  $('timerbox').classList.toggle('warn', rem<=15);
+  const rem=e.remaining_s||0;
+  const fmt=s=>String(Math.floor(s/60)).padStart(2,'0')+':'+String(Math.floor(s%60)).padStart(2,'0');
+  $('timer').textContent=fmt(rem);
+  $('timerbox').classList.toggle('warn', rem<=10);
   $('fps').textContent=e.fps? ('detecção '+e.fps+' fps'):'';
+
+  const phase=e.phase||'betting';
+  const pel=$('phase'); pel.className='phase '+phase;
+  if(phase==='betting') pel.textContent='🟢 APOSTAS ABERTAS · encerram em '+fmt(rem);
+  else if(phase==='running') pel.textContent='🔵 APOSTAS ENCERRADAS · contando (faltam '+fmt(rem)+')';
+  else pel.textContent='🟣 RODADA ENCERRADA · próxima em '+fmt(rem);
+  const canBet = (phase==='betting');
+  $('buyOver').disabled=!canBet; $('buyUnder').disabled=!canBet;
 
   $('labOver').textContent='Mais de '+X;
   $('labUnder').textContent='Até '+X;

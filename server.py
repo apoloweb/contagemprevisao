@@ -66,8 +66,12 @@ class App:
         self.x0 = int(cfg.get("threshold", 3))
         q0 = question_for(self.x0, self.classes0)
 
-        self.engine = OracleEngine(cfg, on_round_end=None)
-        self.engine.on_round_end = self._on_round_end
+        self.engine = OracleEngine(
+            cfg,
+            on_round_end=self._on_round_end,
+            on_betting_close=self._on_betting_close,
+            on_new_round=self._on_new_round,
+        )
         self.exchange.open_market(1, self.x0, q0)
         self.engine.set_threshold(self.x0)
         self.engine.set_question(q0)
@@ -82,15 +86,21 @@ class App:
         self._stop.set()
         self.engine.stop()
 
+    def _on_betting_close(self):
+        m = self.exchange.market
+        if m:
+            m.close_betting()
+
     def _on_round_end(self, result: dict):
-        fc = int(result["final_count"])
-        self.exchange.settle(fc)
+        # as apostas ja encerraram na fase 'running'; aqui so liquida
+        self.exchange.settle(int(result["final_count"]))
+
+    def _on_new_round(self, prev_final: int, round_id: int):
         st = self.engine.get_state()
         classes = st.get("classes", self.classes0)
-        next_x = max(1, fc)                    # proximo limiar = contagem que saiu
-        rid = int(result["round_id"]) + 1
+        next_x = max(1, int(prev_final))       # alvo da proxima = contagem desta
         q = question_for(next_x, classes)
-        self.exchange.open_market(rid, next_x, q)
+        self.exchange.open_market(round_id, next_x, q)
         self.engine.set_threshold(next_x)
         self.engine.set_question(q)
 
@@ -99,7 +109,7 @@ class App:
             try:
                 st = self.engine.get_state()
                 m = self.exchange.market
-                if st.get("ready") and m and m.open:
+                if st.get("ready") and m and m.open and m.betting_open:
                     x = m.threshold
                     c = int(st.get("count", 0))
                     rem = float(st.get("remaining_s", 0))
@@ -251,7 +261,9 @@ def load_cfg(args) -> dict:
             cfg[k] = [c.strip() for c in v.split(",") if c.strip()]
         else:
             cfg[k] = v
-    cfg.setdefault("round_seconds", 60)
+    cfg.setdefault("betting_seconds", 30)
+    cfg.setdefault("round_seconds", 90)
+    cfg.setdefault("pause_seconds", 15)
     cfg.setdefault("model", "yolo11s.pt")
     return cfg
 
@@ -262,7 +274,9 @@ def main():
     p.add_argument("--source", help="webcam(0), arquivo, .m3u8 ou pagina de live")
     p.add_argument("--model")
     p.add_argument("--classes", help="ex: car,truck,bus,motorcycle ou person")
+    p.add_argument("--betting-seconds", type=float, dest="betting_seconds")
     p.add_argument("--round-seconds", type=float, dest="round_seconds")
+    p.add_argument("--pause-seconds", type=float, dest="pause_seconds")
     p.add_argument("--threshold", type=int)
     p.add_argument("--conf", type=float)
     p.add_argument("--device")
