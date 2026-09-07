@@ -160,6 +160,7 @@ class OracleEngine(threading.Thread):
         from ultralytics import YOLO
 
         target = resolve_source(str(self.cfg["source"]), int(self.cfg.get("max_height", 720)))
+        is_file = isinstance(target, str) and Path(target).exists()
         model = YOLO(self.cfg.get("model", "yolo11s.pt"))
         device = self.cfg.get("device", 0)
         conf = float(self.cfg.get("conf", 0.3))
@@ -187,6 +188,9 @@ class OracleEngine(threading.Thread):
         if self._stop.is_set():
             return
         h, w = frame.shape[:2]
+        src_fps = (cap.get(cv2.CAP_PROP_FPS) or 25.0) if is_file else 0.0
+        play_start = time.time()
+        frames_played = 0
 
         ff = None
         if hls_on:
@@ -217,10 +221,21 @@ class OracleEngine(threading.Thread):
         while not self._stop.is_set():
             ok, frame = cap.read()
             if not ok or frame is None:
+                if is_file:
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # loop do clipe
+                    play_start = time.time()
+                    frames_played = 0
+                    continue
                 cap.release()
                 time.sleep(1.0)
                 cap = _open_capture(target)
                 continue
+
+            if is_file and src_fps > 0:  # toca o arquivo em tempo real
+                frames_played += 1
+                _dt = play_start + frames_played / src_fps - time.time()
+                if _dt > 0:
+                    time.sleep(min(_dt, 0.5))
 
             self._apply_pending(counter, w, h)
 

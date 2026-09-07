@@ -6,3 +6,4 @@ web/hls/
 *.mp4
 yolo*.pt
 .git/
+!media/street.mp4

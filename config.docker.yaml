@@ -1,5 +1,5 @@
 # Config para rodar na VPS (CPU, sem GPU). Ajustado pra aguentar 1 vCPU.
-source: "https://www.youtube.com/watch?v=sTF-6_xinUU"
+source: "media/street.mp4"
 model: yolo11n.pt
 device: cpu
 classes: [car, motorcycle, bus, truck]

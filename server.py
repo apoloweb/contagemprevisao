@@ -305,7 +305,7 @@ def main():
 
     app = App(cfg)
     app.start()
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(app))
+    server = ThreadingHTTPServer(("0.0.0.0", args.port), make_handler(app))
     server.daemon_threads = True
     print(f"[server] http://127.0.0.1:{args.port}  (fonte: {cfg['source']})")
     try:
